@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import mongoose from 'mongoose';
 import { Post } from '../models/Post.js';
 import { Comment } from '../models/Comment.js';
 import { Follow } from '../models/Follow.js';
@@ -78,7 +79,7 @@ router.get('/stories', optionalAuth, async (req: AuthRequest, res) => {
 
   const grouped: Record<string, { author: unknown; items: unknown[] }> = {};
   for (const s of stories) {
-    const authorId = (s.author as { _id: string })._id?.toString() || String(s.author);
+    const authorId = (s.author as unknown as { _id: mongoose.Types.ObjectId })._id?.toString() || String(s.author);
     if (!grouped[authorId]) {
       grouped[authorId] = { author: s.author, items: [] };
     }
@@ -397,7 +398,7 @@ router.put('/:id', authenticate, validate(editPostSchema), async (req: AuthReque
   await post.save();
   await post.populate('author', 'username avatar isVerified');
   await post.populate('taggedUsers', 'username avatar');
-  res.json({ post: formatPost(post.toObject() as Record<string, unknown>, req.userId) });
+  res.json({ post: formatPost(post.toObject() as unknown as Record<string, unknown>, req.userId) });
 });
 
 export default router;

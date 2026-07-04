@@ -3,7 +3,7 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import { Message } from '../models/Message.js';
 import { User } from '../models/User.js';
-import { Post } from '../models/Post.js';
+import { Post, IPost } from '../models/Post.js';
 import { Follow } from '../models/Follow.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -382,7 +382,7 @@ router.post('/', authenticate, validate(sendSchema), async (req: AuthRequest, re
     return res.status(403).json({ error: 'Cannot message this user', code });
   }
 
-  let sharedPost: Awaited<ReturnType<typeof Post.findById>> = null;
+  let sharedPost: IPost | null = null;
   let messageContent = content?.trim() || '';
 
   if (sharedPostId) {

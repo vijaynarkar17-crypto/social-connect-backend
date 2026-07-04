@@ -145,7 +145,7 @@ router.get('/me/saved', authenticate, async (req: AuthRequest, res) => {
   const posts = (user?.savedPosts || [])
     .filter((p) => p && typeof p === 'object' && '_id' in (p as object))
     .map((p) => {
-      const raw = (p as { toObject?: () => Record<string, unknown> }).toObject?.() || (p as Record<string, unknown>);
+      const raw = (p as { toObject?: () => Record<string, unknown> }).toObject?.() || (p as unknown as Record<string, unknown>);
       return formatPost(raw, req.userId);
     });
 
