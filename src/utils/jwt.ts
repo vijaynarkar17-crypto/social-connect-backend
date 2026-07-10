@@ -30,18 +30,19 @@ export function setAuthCookies(res: Response, accessToken: string, refreshToken:
   res.cookie('accessToken', accessToken, {
     httpOnly: true,
     secure: isProd,
-    sameSite: isProd ? 'strict' : 'lax',
+    sameSite: isProd ? 'none' : 'lax',
     maxAge: 15 * 60 * 1000,
   });
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: isProd,
-    sameSite: isProd ? 'strict' : 'lax',
+    sameSite: isProd ? 'none' : 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
 }
 
 export function clearAuthCookies(res: Response) {
-  res.clearCookie('accessToken');
-  res.clearCookie('refreshToken');
+  const isProd = process.env.NODE_ENV === 'production';
+  res.clearCookie('accessToken', { secure: isProd, sameSite: isProd ? 'none' : 'lax' });
+  res.clearCookie('refreshToken', { secure: isProd, sameSite: isProd ? 'none' : 'lax' });
 }
