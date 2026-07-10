@@ -23,6 +23,7 @@ import fileRoutes from './routes/files.js';
 import { removeDemoAccounts } from './services/notifications.js';
 import { startExpiredPostCleanup } from './services/expirePosts.js';
 import { seedDemoClips } from './services/seedDemoClips.js';
+import { clearBrokenLocalProfileImages } from './services/clearBrokenUploads.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -88,6 +89,10 @@ connectDB()
   .then(async () => {
     if (process.env.CLEANUP_DEMO_ACCOUNTS === 'true') {
       await removeDemoAccounts();
+    }
+    const cleared = await clearBrokenLocalProfileImages();
+    if (cleared > 0) {
+      console.log(`Cleared ${cleared} broken local avatar/cover URL(s) — re-upload required`);
     }
     startExpiredPostCleanup();
     await seedDemoClips();

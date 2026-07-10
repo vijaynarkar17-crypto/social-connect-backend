@@ -77,7 +77,7 @@ router.post('/me/avatar', authenticate, profileUpload.single('file'), async (req
   const user = await User.findByIdAndUpdate(req.userId, { avatar: url }, { new: true }).select(
     '-passwordHash -refreshTokens'
   );
-  res.json({ user: serializeUser(user!), url });
+  res.json({ user: serializeUser(user!), url: resolvePublicUrl(url) || url });
 });
 
 router.post('/me/cover', authenticate, profileUpload.single('file'), async (req: AuthRequest, res) => {
@@ -90,7 +90,7 @@ router.post('/me/cover', authenticate, profileUpload.single('file'), async (req:
   const user = await User.findByIdAndUpdate(req.userId, { cover: url }, { new: true }).select(
     '-passwordHash -refreshTokens'
   );
-  res.json({ user: serializeUser(user!), url });
+  res.json({ user: serializeUser(user!), url: resolvePublicUrl(url) || url });
 });
 
 router.get('/mentions/search', authenticate, async (req: AuthRequest, res) => {

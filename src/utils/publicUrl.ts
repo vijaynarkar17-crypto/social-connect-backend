@@ -20,10 +20,15 @@ function extractUploadPath(url: string): string | undefined {
 export function resolvePublicUrl(url?: string | null): string | undefined {
   if (!url) return undefined;
 
+  // Ephemeral Render disk paths are gone after redeploy — do not serve them
+  const isHosted = process.env.NODE_ENV === 'production' || !!process.env.RENDER_EXTERNAL_URL;
+  if (isHosted && url.includes('/uploads/')) return undefined;
+
   if (/^https?:\/\//i.test(url)) {
     if (url.includes('cloudinary.com') || url.includes('res.cloudinary.com')) return url;
     const path = extractUploadPath(url);
     if (path) {
+      if (isHosted && path.startsWith('/uploads/')) return undefined;
       const base = getPublicApiBase();
       return base ? `${base}${path}` : path;
     }
@@ -31,6 +36,7 @@ export function resolvePublicUrl(url?: string | null): string | undefined {
   }
 
   if (url.startsWith('/')) {
+    if (isHosted && url.startsWith('/uploads/')) return undefined;
     const base = getPublicApiBase();
     return base ? `${base}${url}` : url;
   }

@@ -9,7 +9,21 @@ cloudinary.config({
 });
 
 export function isCloudinaryConfigured() {
-  return !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY);
+  return !!(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  );
+}
+
+/** Hosted environments must not use ephemeral disk. */
+function usePersistentStorage() {
+  return (
+    process.env.NODE_ENV === 'production' ||
+    !!process.env.RENDER ||
+    !!process.env.RENDER_EXTERNAL_URL ||
+    process.env.USE_GRIDFS === 'true'
+  );
 }
 
 export async function uploadBuffer(
@@ -22,7 +36,7 @@ export async function uploadBuffer(
       const stream = cloudinary.uploader.upload_stream(
         {
           folder: `socialconnect/${folder}`,
-          resource_type: mimeType.startsWith('video/') ? 'video' : 'image',
+          resource_type: mimeType.startsWith('video/') ? 'video' : 'auto',
         },
         (err, result) => {
           if (err || !result) reject(err || new Error('Upload failed'));
@@ -33,7 +47,8 @@ export async function uploadBuffer(
     });
   }
 
-  if (process.env.NODE_ENV === 'production') {
+  // Always persist on Render / production — local disk is wiped on redeploy
+  if (usePersistentStorage()) {
     return uploadToGridFS(buffer, folder, mimeType);
   }
 
@@ -45,9 +60,13 @@ export async function uploadBuffer(
     ? '.png'
     : mimeType.includes('webp')
       ? '.webp'
-      : mimeType.includes('video')
-        ? '.mp4'
-        : '.jpg';
+      : mimeType.includes('gif')
+        ? '.gif'
+        : mimeType.includes('video')
+          ? '.mp4'
+          : mimeType.includes('audio')
+            ? '.mp3'
+            : '.jpg';
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
   const filepath = path.join(uploadsDir, filename);
   await fs.promises.writeFile(filepath, buffer);
