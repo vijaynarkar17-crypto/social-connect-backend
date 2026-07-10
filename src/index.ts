@@ -19,6 +19,7 @@ import notificationRoutes from './routes/notifications.js';
 import searchRoutes from './routes/search.js';
 import gifRoutes from './routes/gifs.js';
 import messageRoutes from './routes/messages.js';
+import fileRoutes from './routes/files.js';
 import { removeDemoAccounts } from './services/notifications.js';
 import { startExpiredPostCleanup } from './services/expirePosts.js';
 import { seedDemoClips } from './services/seedDemoClips.js';
@@ -75,6 +76,7 @@ app.use('/api/notifications', apiLimiter, notificationRoutes);
 app.use('/api/search', apiLimiter, searchRoutes);
 app.use('/api/gifs', apiLimiter, gifRoutes);
 app.use('/api/messages', apiLimiter, messageRoutes);
+app.use('/api/files', fileRoutes);
 
 app.use(errorHandler);
 

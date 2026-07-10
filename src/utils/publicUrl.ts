@@ -3,18 +3,46 @@ export function getPublicApiBase(): string {
   const base =
     process.env.API_PUBLIC_URL ||
     process.env.RENDER_EXTERNAL_URL ||
-    (process.env.NODE_ENV !== 'production' ? `http://localhost:${process.env.PORT || 4000}` : '');
+    (process.env.NODE_ENV === 'production'
+      ? 'https://social-connect-backend-t9nh.onrender.com'
+      : `http://localhost:${process.env.PORT || 4000}`);
   return base.replace(/\/$/, '');
+}
+
+function extractUploadPath(url: string): string | undefined {
+  const apiFile = url.match(/(\/api\/files\/[a-f0-9]{24})/i);
+  if (apiFile) return apiFile[1];
+  const upload = url.match(/(\/uploads\/[^\s?#]+)/i);
+  if (upload) return upload[1];
+  return undefined;
 }
 
 export function resolvePublicUrl(url?: string | null): string | undefined {
   if (!url) return undefined;
-  if (/^https?:\/\//i.test(url)) return url;
+
+  if (/^https?:\/\//i.test(url)) {
+    if (url.includes('cloudinary.com') || url.includes('res.cloudinary.com')) return url;
+    const path = extractUploadPath(url);
+    if (path) {
+      const base = getPublicApiBase();
+      return base ? `${base}${path}` : path;
+    }
+    return url;
+  }
+
   if (url.startsWith('/')) {
     const base = getPublicApiBase();
     return base ? `${base}${url}` : url;
   }
   return url;
+}
+
+/** Store relative paths in the database; full URLs are resolved on read. */
+export function normalizeStoredAssetUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  if (url.includes('cloudinary.com') || url.includes('res.cloudinary.com')) return url;
+  const path = extractUploadPath(url);
+  return path || url;
 }
 
 export function resolvePublicUrls(urls?: string[] | null): string[] {

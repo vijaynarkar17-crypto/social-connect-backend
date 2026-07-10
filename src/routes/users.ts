@@ -12,7 +12,7 @@ import { Notification } from '../models/Notification.js';
 import { notExpiredFilter } from '../services/expirePosts.js';
 import { Report } from '../models/Report.js';
 import { formatPostPayload, serializeUser } from '../utils/serializeUser.js';
-import { resolvePublicUrl } from '../utils/publicUrl.js';
+import { resolvePublicUrl, normalizeStoredAssetUrl } from '../utils/publicUrl.js';
 
 const router = Router();
 
@@ -53,7 +53,10 @@ const updateSchema = z.object({
 });
 
 router.put('/me', authenticate, validate(updateSchema), async (req: AuthRequest, res) => {
-  const user = await User.findByIdAndUpdate(req.userId, req.body, { new: true }).select('-passwordHash -refreshTokens');
+  const body = { ...req.body } as Record<string, unknown>;
+  if (typeof body.avatar === 'string') body.avatar = normalizeStoredAssetUrl(body.avatar);
+  if (typeof body.cover === 'string') body.cover = normalizeStoredAssetUrl(body.cover);
+  const user = await User.findByIdAndUpdate(req.userId, body, { new: true }).select('-passwordHash -refreshTokens');
   res.json({ user: serializeUser(user!) });
 });
 

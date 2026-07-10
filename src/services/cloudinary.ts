@@ -1,6 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
-import { resolvePublicUrl } from '../utils/publicUrl.js';
+import { uploadToGridFS } from './gridfs.js';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -12,26 +12,44 @@ export function isCloudinaryConfigured() {
   return !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY);
 }
 
-export async function uploadBuffer(buffer: Buffer, folder: string): Promise<string> {
-  if (!isCloudinaryConfigured()) {
-    const fs = await import('fs');
-    const path = await import('path');
-    const uploadsDir = path.join(process.cwd(), 'uploads', folder);
-    await fs.promises.mkdir(uploadsDir, { recursive: true });
-    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-    const filepath = path.join(uploadsDir, filename);
-    await fs.promises.writeFile(filepath, buffer);
-    return resolvePublicUrl(`/uploads/${folder}/${filename}`)!;
+export async function uploadBuffer(
+  buffer: Buffer,
+  folder: string,
+  mimeType = 'image/jpeg'
+): Promise<string> {
+  if (isCloudinaryConfigured()) {
+    return new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: `socialconnect/${folder}`,
+          resource_type: mimeType.startsWith('video/') ? 'video' : 'image',
+        },
+        (err, result) => {
+          if (err || !result) reject(err || new Error('Upload failed'));
+          else resolve(result.secure_url);
+        }
+      );
+      Readable.from(buffer).pipe(stream);
+    });
   }
 
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: `socialconnect/${folder}` },
-      (err, result) => {
-        if (err || !result) reject(err || new Error('Upload failed'));
-        else resolve(result.secure_url);
-      }
-    );
-    Readable.from(buffer).pipe(stream);
-  });
+  if (process.env.NODE_ENV === 'production') {
+    return uploadToGridFS(buffer, folder, mimeType);
+  }
+
+  const fs = await import('fs');
+  const path = await import('path');
+  const uploadsDir = path.join(process.cwd(), 'uploads', folder);
+  await fs.promises.mkdir(uploadsDir, { recursive: true });
+  const ext = mimeType.includes('png')
+    ? '.png'
+    : mimeType.includes('webp')
+      ? '.webp'
+      : mimeType.includes('video')
+        ? '.mp4'
+        : '.jpg';
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+  const filepath = path.join(uploadsDir, filename);
+  await fs.promises.writeFile(filepath, buffer);
+  return `/uploads/${folder}/${filename}`;
 }

@@ -175,7 +175,7 @@ router.post('/', authenticate, validate(createPostSchema), async (req: AuthReque
 router.post('/upload', authenticate, upload.single('file'), async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const folder = (req.body.folder as string) || 'posts';
-  const url = await uploadBuffer(req.file.buffer, folder);
+  const url = await uploadBuffer(req.file.buffer, folder, req.file.mimetype);
   res.json({ url, type: req.file.mimetype.startsWith('video/') ? 'video' : 'image' });
 });
 

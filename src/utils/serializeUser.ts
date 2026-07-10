@@ -34,7 +34,7 @@ export function formatPostPayload(post: Record<string, unknown>, userId?: string
   const author = post.author as { username: string; avatar?: string; isVerified?: boolean };
   const tagged = (post.taggedUsers as { _id?: string; username?: string; avatar?: string }[]) || [];
   return {
-    id: post._id,
+    id: String(post._id ?? post.id ?? ''),
     type: post.type,
     content: post.content,
     media: resolvePublicUrls(post.media as string[]),
