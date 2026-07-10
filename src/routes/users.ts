@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { User } from '../models/User.js';
 import { Post } from '../models/Post.js';
@@ -13,8 +14,13 @@ import { notExpiredFilter } from '../services/expirePosts.js';
 import { Report } from '../models/Report.js';
 import { formatPostPayload, serializeUser } from '../utils/serializeUser.js';
 import { resolvePublicUrl, normalizeStoredAssetUrl } from '../utils/publicUrl.js';
+import { uploadBuffer } from '../services/cloudinary.js';
 
 const router = Router();
+const profileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 async function getUserStats(userId: string) {
   const [posts, followers, following] = await Promise.all([
@@ -58,6 +64,32 @@ router.put('/me', authenticate, validate(updateSchema), async (req: AuthRequest,
   if (typeof body.cover === 'string') body.cover = normalizeStoredAssetUrl(body.cover);
   const user = await User.findByIdAndUpdate(req.userId, body, { new: true }).select('-passwordHash -refreshTokens');
   res.json({ user: serializeUser(user!) });
+});
+
+router.post('/me/avatar', authenticate, profileUpload.single('file'), async (req: AuthRequest, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image file' });
+  if (!req.file.mimetype.startsWith('image/')) {
+    return res.status(400).json({ error: 'Only image files are allowed' });
+  }
+
+  const url = await uploadBuffer(req.file.buffer, 'avatars', req.file.mimetype);
+  const user = await User.findByIdAndUpdate(req.userId, { avatar: url }, { new: true }).select(
+    '-passwordHash -refreshTokens'
+  );
+  res.json({ user: serializeUser(user!), url });
+});
+
+router.post('/me/cover', authenticate, profileUpload.single('file'), async (req: AuthRequest, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image file' });
+  if (!req.file.mimetype.startsWith('image/')) {
+    return res.status(400).json({ error: 'Only image files are allowed' });
+  }
+
+  const url = await uploadBuffer(req.file.buffer, 'covers', req.file.mimetype);
+  const user = await User.findByIdAndUpdate(req.userId, { cover: url }, { new: true }).select(
+    '-passwordHash -refreshTokens'
+  );
+  res.json({ user: serializeUser(user!), url });
 });
 
 router.get('/mentions/search', authenticate, async (req: AuthRequest, res) => {
