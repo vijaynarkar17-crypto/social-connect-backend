@@ -304,15 +304,28 @@ router.get('/with/:userId', authenticate, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'Invalid user id' });
   }
 
-  const messages = await Message.find({
+  const rawLimit = parseInt(String(req.query.limit ?? '20'), 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 20;
+  const before = typeof req.query.before === 'string' ? req.query.before.trim() : '';
+
+  const baseFilter: Record<string, unknown> = {
     $or: [
       { sender: req.userId, recipient: partnerId },
       { sender: partnerId, recipient: req.userId },
     ],
     deletedFor: { $nin: [req.userId] },
-  })
-    .sort({ createdAt: 1 })
-    .limit(100)
+  };
+
+  if (before && mongoose.Types.ObjectId.isValid(before)) {
+    const beforeMsg = await Message.findById(before).select('createdAt');
+    if (beforeMsg) {
+      baseFilter.createdAt = { $lt: beforeMsg.createdAt };
+    }
+  }
+
+  const fetched = await Message.find(baseFilter)
+    .sort({ createdAt: -1 })
+    .limit(limit + 1)
     .populate('sender', 'username avatar')
     .populate({
       path: 'sharedPost',
@@ -320,10 +333,16 @@ router.get('/with/:userId', authenticate, async (req: AuthRequest, res) => {
       populate: { path: 'author', select: 'username avatar' },
     });
 
-  await Message.updateMany(
-    { sender: partnerId, recipient: req.userId, read: false },
-    { $set: { read: true } }
-  );
+  const hasMore = fetched.length > limit;
+  const page = hasMore ? fetched.slice(0, limit) : fetched;
+  const messages = page.reverse();
+
+  if (!before) {
+    await Message.updateMany(
+      { sender: partnerId, recipient: req.userId, read: false },
+      { $set: { read: true } }
+    );
+  }
 
   res.json({
     messages: messages.map((m) => {
@@ -344,6 +363,8 @@ router.get('/with/:userId', authenticate, async (req: AuthRequest, res) => {
         sharedPost: shared ? formatSharedPost(shared) : undefined,
       };
     }),
+    hasMore,
+    oldestId: messages[0]?._id.toString() ?? null,
   });
 });
 
