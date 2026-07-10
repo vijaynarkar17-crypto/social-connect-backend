@@ -3,6 +3,7 @@ import { User } from '../models/User.js';
 import { Post } from '../models/Post.js';
 import { Follow } from '../models/Follow.js';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
+import { resolvePublicUrl, resolvePublicUrls, withPublicAvatar } from '../utils/publicUrl.js';
 
 const router = Router();
 
@@ -28,12 +29,12 @@ router.get('/', optionalAuth, async (req: AuthRequest, res) => {
     .lean();
 
   res.json({
-    users: users.map((u) => ({ ...u, id: u._id })),
+    users: users.map((u) => ({ ...u, id: u._id, avatar: resolvePublicUrl(u.avatar) })),
     posts: posts.map((p) => ({
       id: p._id,
       content: p.content,
-      media: p.media,
-      author: p.author,
+      media: resolvePublicUrls(p.media),
+      author: withPublicAvatar(p.author as { avatar?: string }),
       createdAt: p.createdAt,
     })),
     hashtags: [`#${q}`, `#${q}Trending`].slice(0, 5),
@@ -62,12 +63,12 @@ router.get('/recommendations', authenticate, async (req: AuthRequest, res) => {
   const trendingTags = ['#TechNews', '#SocialConnect', '#WeekendVibes', '#Creators', '#Clips'];
 
   res.json({
-    suggestedUsers: suggestedUsers.map((u) => ({ ...u, id: u._id })),
+    suggestedUsers: suggestedUsers.map((u) => ({ ...u, id: u._id, avatar: resolvePublicUrl(u.avatar) })),
     trendingPosts: trendingPosts.map((p) => ({
       id: p._id,
       content: p.content,
-      media: p.media,
-      author: p.author,
+      media: resolvePublicUrls(p.media),
+      author: withPublicAvatar(p.author as { avatar?: string }),
       likeCount: p.likes?.length || 0,
     })),
     trendingTags,

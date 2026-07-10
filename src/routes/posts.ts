@@ -14,6 +14,8 @@ import { createNotification } from '../services/notifications.js';
 import { Message } from '../models/Message.js';
 import { notifyTaggedUsers, notifyCommentMentions } from '../services/mentions.js';
 import { deleteExpiredPosts, notExpiredFilter } from '../services/expirePosts.js';
+import { formatPostPayload } from '../utils/serializeUser.js';
+import { resolvePublicUrls, withPublicAvatar } from '../utils/publicUrl.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -28,30 +30,7 @@ const createPostSchema = z.object({
 });
 
 function formatPost(post: Record<string, unknown>, userId?: string) {
-  const likes = (post.likes as string[]) || [];
-  const tagged = (post.taggedUsers as { _id?: string; username?: string; avatar?: string }[]) || [];
-  return {
-    id: post._id,
-    type: post.type,
-    content: post.content,
-    media: post.media,
-    likeCount: likes.length,
-    commentCount: post.commentCount ?? 0,
-    viewCount: post.viewCount ?? 0,
-    shareCount: post.shareCount ?? 0,
-    isLiked: userId ? likes.some((id) => id.toString() === userId) : false,
-    isPinned: post.isPinned,
-    visibility: post.visibility,
-    expiresAt: post.expiresAt || null,
-    dailyVibe: !!post.dailyVibe,
-    createdAt: post.createdAt,
-    author: post.author,
-    taggedUsers: tagged.map((u) =>
-      typeof u === 'object' && u !== null && 'username' in u
-        ? { id: u._id, username: u.username, avatar: u.avatar }
-        : u
-    ),
-  };
+  return formatPostPayload(post, userId);
 }
 
 router.get('/stories', optionalAuth, async (req: AuthRequest, res) => {
@@ -81,11 +60,11 @@ router.get('/stories', optionalAuth, async (req: AuthRequest, res) => {
   for (const s of stories) {
     const authorId = (s.author as unknown as { _id: mongoose.Types.ObjectId })._id?.toString() || String(s.author);
     if (!grouped[authorId]) {
-      grouped[authorId] = { author: s.author, items: [] };
+      grouped[authorId] = { author: withPublicAvatar(s.author as { avatar?: string }), items: [] };
     }
     grouped[authorId].items.push({
       id: s._id,
-      media: s.media,
+      media: resolvePublicUrls(s.media as string[]),
       storyEffect: s.storyEffect,
       createdAt: s.createdAt,
       expiresAt: s.expiresAt,

@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+import { resolvePublicUrl } from '../utils/publicUrl.js';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -20,7 +21,7 @@ export async function uploadBuffer(buffer: Buffer, folder: string): Promise<stri
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
     const filepath = path.join(uploadsDir, filename);
     await fs.promises.writeFile(filepath, buffer);
-    return `/uploads/${folder}/${filename}`;
+    return resolvePublicUrl(`/uploads/${folder}/${filename}`)!;
   }
 
   return new Promise((resolve, reject) => {

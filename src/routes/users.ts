@@ -11,6 +11,8 @@ import { createNotification } from '../services/notifications.js';
 import { Notification } from '../models/Notification.js';
 import { notExpiredFilter } from '../services/expirePosts.js';
 import { Report } from '../models/Report.js';
+import { formatPostPayload, serializeUser } from '../utils/serializeUser.js';
+import { resolvePublicUrl } from '../utils/publicUrl.js';
 
 const router = Router();
 
@@ -28,27 +30,7 @@ async function getUserStats(userId: string) {
 }
 
 function formatPost(p: Record<string, unknown>, userId?: string) {
-  const likes = (p.likes as string[]) || [];
-  const author = p.author as { username: string; avatar?: string; isVerified?: boolean };
-  const tagged = (p.taggedUsers as { _id?: string; username?: string; avatar?: string }[]) || [];
-  return {
-    id: p._id,
-    type: p.type,
-    content: p.content,
-    media: p.media,
-    likeCount: likes.length,
-    commentCount: p.commentCount ?? 0,
-    viewCount: p.viewCount ?? 0,
-    shareCount: p.shareCount ?? 0,
-    isLiked: userId ? likes.some((id) => id.toString() === userId) : false,
-    createdAt: p.createdAt,
-    author,
-    taggedUsers: tagged.map((u) =>
-      typeof u === 'object' && u !== null && 'username' in u
-        ? { id: u._id, username: u.username, avatar: u.avatar }
-        : u
-    ),
-  };
+  return formatPostPayload(p, userId);
 }
 
 const updateSchema = z.object({
@@ -72,7 +54,7 @@ const updateSchema = z.object({
 
 router.put('/me', authenticate, validate(updateSchema), async (req: AuthRequest, res) => {
   const user = await User.findByIdAndUpdate(req.userId, req.body, { new: true }).select('-passwordHash -refreshTokens');
-  res.json({ user });
+  res.json({ user: serializeUser(user!) });
 });
 
 router.get('/mentions/search', authenticate, async (req: AuthRequest, res) => {
@@ -83,7 +65,7 @@ router.get('/mentions/search', authenticate, async (req: AuthRequest, res) => {
     .select('username avatar')
     .limit(8)
     .lean();
-  res.json({ users: users.map((u) => ({ id: u._id, username: u.username, avatar: u.avatar })) });
+  res.json({ users: users.map((u) => ({ id: u._id, username: u.username, avatar: resolvePublicUrl(u.avatar) })) });
 });
 
 router.get('/me/share-contacts', authenticate, async (req: AuthRequest, res) => {
@@ -108,7 +90,7 @@ router.get('/me/share-contacts', authenticate, async (req: AuthRequest, res) => 
     const id = u._id?.toString?.() || String(u._id);
     if (seen.has(id)) continue;
     seen.add(id);
-    users.push({ id, username: u.username, avatar: u.avatar, isVerified: u.isVerified });
+    users.push({ id, username: u.username, avatar: resolvePublicUrl(u.avatar), isVerified: u.isVerified });
   }
 
   if (q && q.length >= 1) {
@@ -122,7 +104,7 @@ router.get('/me/share-contacts', authenticate, async (req: AuthRequest, res) => 
       const id = u._id.toString();
       if (!seen.has(id)) {
         seen.add(id);
-        filtered.push({ id, username: u.username, avatar: u.avatar, isVerified: u.isVerified });
+        filtered.push({ id, username: u.username, avatar: resolvePublicUrl(u.avatar), isVerified: u.isVerified });
       }
     }
     return res.json({ users: filtered });
@@ -180,8 +162,8 @@ router.get('/:username', optionalAuth, async (req: AuthRequest, res) => {
     user: {
       id: user._id,
       username: user.username,
-      avatar: user.avatar,
-      cover: user.cover,
+      avatar: resolvePublicUrl(user.avatar),
+      cover: resolvePublicUrl(user.cover),
       bio: user.bio,
       links: user.links,
       isVerified: user.isVerified,

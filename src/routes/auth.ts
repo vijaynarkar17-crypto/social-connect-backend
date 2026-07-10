@@ -7,6 +7,7 @@ import { Session } from '../models/Session.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, setAuthCookies, clearAuthCookies } from '../utils/jwt.js';
+import { serializeUser } from '../utils/serializeUser.js';
 import { sendOtpEmail, sendVerifyEmail } from '../services/email.js';
 
 const router = Router();
@@ -47,15 +48,7 @@ router.post('/register', validate(registerSchema), async (req, res) => {
   await createSession(user._id.toString(), refreshToken);
   setAuthCookies(res, accessToken, refreshToken);
 
-  res.status(201).json({
-    user: {
-      id: user._id,
-      email: user.email,
-      username: user.username,
-      avatar: user.avatar,
-      theme: user.theme,
-    },
-  });
+  res.status(201).json({ user: serializeUser(user) });
 });
 
 router.post('/login', validate(loginSchema), async (req, res) => {
@@ -73,18 +66,7 @@ router.post('/login', validate(loginSchema), async (req, res) => {
     await createSession(user._id.toString(), refreshToken, remember);
     setAuthCookies(res, accessToken, refreshToken);
 
-    res.json({
-      user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        avatar: user.avatar,
-        cover: user.cover,
-        bio: user.bio,
-        theme: user.theme,
-        isVerified: user.isVerified,
-      },
-    });
+    res.json({ user: serializeUser(user) });
   } catch (err) {
     console.error('Login error:', err);
     res.status(503).json({ error: 'Server busy. Please try again.' });
@@ -120,7 +102,7 @@ router.post('/refresh', async (req, res) => {
 });
 
 router.get('/me', authenticate, async (req: AuthRequest, res) => {
-  res.json({ user: req.authUser });
+  res.json({ user: serializeUser(req.authUser!) });
 });
 
 const forgotSchema = z.object({ email: z.string().email() });

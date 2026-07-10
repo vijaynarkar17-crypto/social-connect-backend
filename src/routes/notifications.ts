@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Notification } from '../models/Notification.js';
 import { FollowRequest } from '../models/FollowRequest.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { resolvePublicUrl } from '../utils/publicUrl.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ function mapActor(actor: unknown) {
   return {
     id: a._id.toString(),
     username: a.username,
-    avatar: a.avatar,
+    avatar: resolvePublicUrl(a.avatar),
     isVerified: a.isVerified,
   };
 }

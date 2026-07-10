@@ -11,11 +11,12 @@ import { createNotification } from '../services/notifications.js';
 import { ChatRequest } from '../models/ChatRequest.js';
 import { Report } from '../models/Report.js';
 import { assertCanSendMessage, getChatAccess, listFollowUsers } from '../services/chatAccess.js';
+import { resolvePublicUrl, resolvePublicUrls } from '../utils/publicUrl.js';
 
 const router = Router();
 
 function formatUser(u: { _id: mongoose.Types.ObjectId; username: string; avatar?: string; isVerified?: boolean }) {
-  return { id: u._id.toString(), username: u.username, avatar: u.avatar, isVerified: u.isVerified };
+  return { id: u._id.toString(), username: u.username, avatar: resolvePublicUrl(u.avatar), isVerified: u.isVerified };
 }
 
 function formatSharedPost(post: {
@@ -29,9 +30,9 @@ function formatSharedPost(post: {
     id: post._id.toString(),
     type: post.type,
     content: post.content,
-    media: post.media || [],
+    media: resolvePublicUrls(post.media || []),
     author: post.author
-      ? { username: post.author.username, avatar: post.author.avatar }
+      ? { username: post.author.username, avatar: resolvePublicUrl(post.author.avatar) }
       : undefined,
   };
 }
