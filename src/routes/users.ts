@@ -27,7 +27,8 @@ async function getUserStats(userId: string) {
     Post.countDocuments({
       author: userId,
       isHidden: false,
-      type: { $in: ['image', 'video', 'clip'] },
+      dailyVibe: { $ne: true },
+      type: { $in: ['image', 'clip'] },
     }),
     Follow.countDocuments({ following: userId }),
     Follow.countDocuments({ follower: userId }),
@@ -221,7 +222,8 @@ router.get('/:username/posts', optionalAuth, async (req: AuthRequest, res) => {
   const query: Record<string, unknown> = {
     author: user._id,
     isHidden: false,
-    type: { $nin: ['story', 'clip'] },
+    dailyVibe: { $ne: true },
+    type: { $in: ['image', 'video'] },
     ...notExpiredFilter(),
   };
   if (cursor) query.createdAt = { $lt: new Date(cursor) };

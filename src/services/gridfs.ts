@@ -17,6 +17,9 @@ function extFromMime(mime: string): string {
   if (mime.includes('mp4')) return '.mp4';
   if (mime.includes('webm')) return '.webm';
   if (mime.includes('quicktime')) return '.mov';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return '.mp3';
+  if (mime.includes('wav')) return '.wav';
+  if (mime.includes('audio')) return '.m4a';
   return '.jpg';
 }
 

@@ -47,6 +47,7 @@ export function formatPostPayload(post: Record<string, unknown>, userId?: string
     visibility: post.visibility,
     expiresAt: post.expiresAt || null,
     dailyVibe: !!post.dailyVibe,
+    audio: resolvePublicUrl(post.audio as string | undefined),
     createdAt: post.createdAt,
     author: withPublicAvatar(author),
     taggedUsers: tagged.map((u) =>

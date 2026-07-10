@@ -4,6 +4,8 @@ import { User } from '../models/User.js';
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
+export const DAILY_VIBE_TTL_MS = TWENTY_FOUR_HOURS_MS;
+
 const PERMANENT_TYPES = ['image', 'video', 'clip'] as const;
 
 /** Posts with expiresAt in the past (Daily Vibe / stories) */

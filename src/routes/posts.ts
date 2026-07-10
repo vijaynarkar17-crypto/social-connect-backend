@@ -13,7 +13,7 @@ import { uploadBuffer } from '../services/cloudinary.js';
 import { createNotification } from '../services/notifications.js';
 import { Message } from '../models/Message.js';
 import { notifyTaggedUsers, notifyCommentMentions } from '../services/mentions.js';
-import { deleteExpiredPosts, notExpiredFilter } from '../services/expirePosts.js';
+import { deleteExpiredPosts, notExpiredFilter, DAILY_VIBE_TTL_MS } from '../services/expirePosts.js';
 import { formatPostPayload } from '../utils/serializeUser.js';
 import { resolvePublicUrls, withPublicAvatar } from '../utils/publicUrl.js';
 
@@ -27,6 +27,7 @@ const createPostSchema = z.object({
   visibility: z.enum(['public', 'friends', 'private']).default('public'),
   storyEffect: z.string().optional(),
   dailyVibe: z.boolean().optional(),
+  audio: z.string().optional(),
 });
 
 function formatPost(post: Record<string, unknown>, userId?: string) {
@@ -152,10 +153,11 @@ router.post('/', authenticate, validate(createPostSchema), async (req: AuthReque
   } else if (
     req.body.dailyVibe &&
     req.body.type === 'text' &&
-    !['image', 'video', 'clip'].includes(req.body.type)
+    (!Array.isArray(req.body.media) || req.body.media.length === 0)
   ) {
-    payload.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    payload.expiresAt = new Date(Date.now() + DAILY_VIBE_TTL_MS);
     payload.dailyVibe = true;
+    if (req.body.audio) payload.audio = req.body.audio;
   }
   const post = await Post.create(payload);
   const taggedIds = await notifyTaggedUsers({

@@ -16,6 +16,7 @@ export interface IPost extends Document {
   storyEffect?: string;
   expiresAt?: Date;
   dailyVibe?: boolean;
+  audio?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +38,7 @@ const postSchema = new Schema<IPost>(
     storyEffect: { type: String, default: 'normal' },
     expiresAt: { type: Date },
     dailyVibe: { type: Boolean, default: false },
+    audio: { type: String },
   },
   { timestamps: true }
 );
