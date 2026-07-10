@@ -6,15 +6,35 @@ const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 export const DAILY_VIBE_TTL_MS = TWENTY_FOUR_HOURS_MS;
 
+/** Permanent content — never auto-deleted */
 const PERMANENT_TYPES = ['image', 'video', 'clip'] as const;
 
-/** Posts with expiresAt in the past (Daily Vibe / stories) */
+function cutoff24h(): Date {
+  return new Date(Date.now() - TWENTY_FOUR_HOURS_MS);
+}
+
+/**
+ * Hide expired Daily Vibes / stories from feeds.
+ * Also hides legacy text posts older than 24h even if flags were never set.
+ */
 export function notExpiredFilter() {
+  const cutoff = cutoff24h();
   return {
-    $or: [
-      { expiresAt: { $exists: false } },
-      { expiresAt: null },
-      { expiresAt: { $gt: new Date() } },
+    $and: [
+      {
+        $or: [
+          { expiresAt: { $exists: false } },
+          { expiresAt: null },
+          { expiresAt: { $gt: new Date() } },
+        ],
+      },
+      {
+        $or: [
+          { type: { $in: [...PERMANENT_TYPES] } },
+          { type: { $nin: ['text', 'story'] } },
+          { createdAt: { $gt: cutoff } },
+        ],
+      },
     ],
   };
 }
@@ -22,18 +42,24 @@ export function notExpiredFilter() {
 /** Photos, videos, and clips are permanent — clear mistaken expiry flags */
 export async function restorePermanentPosts(): Promise<number> {
   const result = await Post.updateMany(
-    { type: { $in: PERMANENT_TYPES } },
+    { type: { $in: [...PERMANENT_TYPES] } },
     { $unset: { expiresAt: '' }, $set: { dailyVibe: false } }
   );
   return result.modifiedCount;
 }
 
-/** Backfill expiry only for legacy text daily vibes missing expiresAt */
+/**
+ * Mark every text-only post as a Daily Vibe and set expiresAt = createdAt + 24h.
+ * Covers legacy posts that were never flagged.
+ */
 export async function backfillEphemeralExpiry(): Promise<number> {
   const posts = await Post.find({
-    dailyVibe: true,
-    type: { $nin: [...PERMANENT_TYPES, 'story'] },
-    $or: [{ expiresAt: { $exists: false } }, { expiresAt: null }],
+    type: 'text',
+    $or: [
+      { dailyVibe: { $ne: true } },
+      { expiresAt: { $exists: false } },
+      { expiresAt: null },
+    ],
   }).select('_id createdAt');
 
   if (!posts.length) return 0;
@@ -43,8 +69,8 @@ export async function backfillEphemeralExpiry(): Promise<number> {
       filter: { _id: post._id },
       update: {
         $set: {
-          expiresAt: new Date(new Date(post.createdAt).getTime() + TWENTY_FOUR_HOURS_MS),
           dailyVibe: true,
+          expiresAt: new Date(new Date(post.createdAt).getTime() + TWENTY_FOUR_HOURS_MS),
         },
       },
     },
@@ -54,13 +80,33 @@ export async function backfillEphemeralExpiry(): Promise<number> {
   return result.modifiedCount;
 }
 
+/**
+ * Delete Daily Vibes / stories that are past expiry OR older than 24 hours.
+ * Does NOT touch photos, videos, or clips.
+ */
 export async function deleteExpiredPosts(): Promise<number> {
   const now = new Date();
+  const cutoff = cutoff24h();
 
   const expired = await Post.find({
-    expiresAt: { $exists: true, $ne: null, $lte: now },
-    $or: [{ dailyVibe: true }, { type: 'story' }],
-    type: { $nin: PERMANENT_TYPES },
+    type: { $nin: [...PERMANENT_TYPES] },
+    $or: [
+      // Flagged ephemeral with past expiresAt
+      {
+        expiresAt: { $exists: true, $ne: null, $lte: now },
+        $or: [{ dailyVibe: true }, { type: 'story' }, { type: 'text' }],
+      },
+      // Any text Daily Vibe older than 24h (legacy + current)
+      {
+        type: 'text',
+        createdAt: { $lte: cutoff },
+      },
+      // Stories older than 24h
+      {
+        type: 'story',
+        createdAt: { $lte: cutoff },
+      },
+    ],
   }).select('_id');
 
   if (!expired.length) return 0;
@@ -72,14 +118,19 @@ export async function deleteExpiredPosts(): Promise<number> {
   return result.deletedCount ?? 0;
 }
 
-const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+/** Full cleanup pass — call on feed load and on a timer */
+export async function runExpiredPostCleanup(): Promise<number> {
+  await restorePermanentPosts();
+  await backfillEphemeralExpiry();
+  return deleteExpiredPosts();
+}
+
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
 export function startExpiredPostCleanup() {
   const run = async () => {
     try {
-      await restorePermanentPosts();
-      await backfillEphemeralExpiry();
-      const count = await deleteExpiredPosts();
+      const count = await runExpiredPostCleanup();
       if (count > 0) console.log(`Removed ${count} expired daily-vibe/story post(s)`);
     } catch (err) {
       console.error('Expired post cleanup failed:', err);

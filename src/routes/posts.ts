@@ -13,7 +13,7 @@ import { uploadBuffer } from '../services/cloudinary.js';
 import { createNotification } from '../services/notifications.js';
 import { Message } from '../models/Message.js';
 import { notifyTaggedUsers, notifyCommentMentions } from '../services/mentions.js';
-import { deleteExpiredPosts, notExpiredFilter, DAILY_VIBE_TTL_MS } from '../services/expirePosts.js';
+import { runExpiredPostCleanup, notExpiredFilter, DAILY_VIBE_TTL_MS } from '../services/expirePosts.js';
 import { formatPostPayload } from '../utils/serializeUser.js';
 import { resolvePublicUrls, withPublicAvatar } from '../utils/publicUrl.js';
 
@@ -35,7 +35,7 @@ function formatPost(post: Record<string, unknown>, userId?: string) {
 }
 
 router.get('/stories', optionalAuth, async (req: AuthRequest, res) => {
-  await deleteExpiredPosts();
+  await runExpiredPostCleanup();
 
   const baseQuery: Record<string, unknown> = {
     type: 'story',
@@ -104,7 +104,7 @@ router.get('/clips', optionalAuth, async (req: AuthRequest, res) => {
 });
 
 router.get('/feed', optionalAuth, async (req: AuthRequest, res) => {
-  await deleteExpiredPosts();
+  await runExpiredPostCleanup();
 
   const tab = (req.query.tab as string) || 'latest';
   const limit = Math.min(Number(req.query.limit) || 10, 50);
