@@ -25,15 +25,30 @@ import { seedDemoClips } from './services/seedDemoClips.js';
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true },
-});
 
 const PORT = process.env.PORT || 4000;
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+const allowedOrigins = [
+  frontendUrl,
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+].filter(Boolean) as string[];
+
+function corsOrigin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+  if (!origin) return callback(null, true);
+  if (allowedOrigins.includes(origin)) return callback(null, true);
+  if (/^https:\/\/[\w-]+\.vercel\.app$/i.test(origin)) return callback(null, true);
+  callback(null, false);
+}
+
+const io = new Server(server, {
+  cors: { origin: allowedOrigins, credentials: true },
+});
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: [frontendUrl, 'http://localhost:5174', 'http://127.0.0.1:5173'], credentials: true }));
+app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use(mongoSanitize());
@@ -43,6 +58,13 @@ const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100 });
 
 app.use(passport.initialize());
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'Social Connect Backend is Running',
+    health: '/health',
+  });
+});
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/auth', authLimiter, authRoutes);
