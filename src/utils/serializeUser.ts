@@ -11,6 +11,7 @@ export function serializeUser(user: {
   links?: string[];
   theme?: string;
   isVerified?: boolean;
+  role?: string;
   privacy?: unknown;
   notificationSettings?: unknown;
 }) {
@@ -24,6 +25,7 @@ export function serializeUser(user: {
     links: user.links,
     theme: user.theme,
     isVerified: user.isVerified,
+    role: user.role || 'user',
     privacy: user.privacy,
     notificationSettings: user.notificationSettings,
   };

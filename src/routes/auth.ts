@@ -73,6 +73,29 @@ router.post('/login', validate(loginSchema), async (req, res) => {
   }
 });
 
+router.post('/admin/login', validate(loginSchema), async (req, res) => {
+  try {
+    const { email, password, remember } = req.body;
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).maxTimeMS(8000);
+    if (!user || !user.passwordHash) return res.status(401).json({ error: 'Invalid credentials' });
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access only' });
+    if (user.isBanned) return res.status(403).json({ error: 'Account banned' });
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const accessToken = signAccessToken(user._id.toString());
+    const refreshToken = signRefreshToken(user._id.toString(), remember);
+    await createSession(user._id.toString(), refreshToken, remember);
+    setAuthCookies(res, accessToken, refreshToken);
+
+    res.json({ user: serializeUser(user) });
+  } catch (err) {
+    console.error('Admin login error:', err);
+    res.status(503).json({ error: 'Server busy. Please try again.' });
+  }
+});
+
 router.post('/logout', authenticate, async (req: AuthRequest, res) => {
   const refreshToken = req.cookies?.refreshToken;
   if (refreshToken) await Session.deleteOne({ refreshToken });

@@ -23,7 +23,8 @@ import fileRoutes from './routes/files.js';
 import { removeDemoAccounts } from './services/notifications.js';
 import { startExpiredPostCleanup } from './services/expirePosts.js';
 import { seedDemoClips } from './services/seedDemoClips.js';
-import { clearBrokenLocalProfileImages } from './services/clearBrokenUploads.js';
+import { seedAdminUser } from './services/seedAdmin.js';
+import { clearBrokenLocalProfileImages, deleteBrokenLocalMediaPosts } from './services/clearBrokenUploads.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -36,6 +37,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
 ].filter(Boolean) as string[];
 
 function corsOrigin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
@@ -94,7 +96,12 @@ connectDB()
     if (cleared > 0) {
       console.log(`Cleared ${cleared} broken local avatar/cover URL(s) — re-upload required`);
     }
+    const removedPosts = await deleteBrokenLocalMediaPosts();
+    if (removedPosts > 0) {
+      console.log(`Removed ${removedPosts} post(s) with dead /uploads/ media`);
+    }
     startExpiredPostCleanup();
+    await seedAdminUser();
     await seedDemoClips();
     server.listen(PORT, () => {
       console.log(`SocialConnect API running on http://localhost:${PORT}`);
