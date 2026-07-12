@@ -36,3 +36,21 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
   }
   next();
 }
+
+export async function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const token = req.cookies?.accessToken || req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { userId } = verifyAccessToken(token);
+    const user = await User.findById(userId).select('-passwordHash -refreshTokens');
+    if (!user || user.isBanned) return res.status(401).json({ error: 'Unauthorized' });
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access only' });
+
+    req.userId = userId;
+    req.authUser = user;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+}
