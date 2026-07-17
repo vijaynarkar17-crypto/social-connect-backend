@@ -16,6 +16,12 @@ import { notifyTaggedUsers, notifyCommentMentions } from '../services/mentions.j
 import { runExpiredPostCleanup, notExpiredFilter, DAILY_VIBE_TTL_MS } from '../services/expirePosts.js';
 import { formatPostPayload } from '../utils/serializeUser.js';
 import { resolvePublicUrls, withPublicAvatar } from '../utils/publicUrl.js';
+import {
+  getCachedJson,
+  getContentCacheVersion,
+  invalidateContentCache,
+  setCachedJson,
+} from '../services/redis.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -77,6 +83,10 @@ router.get('/stories', optionalAuth, async (req: AuthRequest, res) => {
 router.get('/clips', optionalAuth, async (req: AuthRequest, res) => {
   const limit = Math.min(Number(req.query.limit) || 20, 50);
   const cursor = req.query.cursor as string | undefined;
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `clips:v${cacheVersion}:u${req.userId || 'guest'}:l${limit}:c${cursor || 'first'}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
 
   const query: Record<string, unknown> = {
     type: 'clip',
@@ -96,11 +106,13 @@ router.get('/clips', optionalAuth, async (req: AuthRequest, res) => {
   const hasMore = clips.length > limit;
   if (hasMore) clips.pop();
 
-  res.json({
+  const payload = {
     clips: clips.map((p) => formatPost(p as Record<string, unknown>, req.userId)),
     nextCursor: hasMore ? clips[clips.length - 1]?.createdAt : null,
     hasMore,
-  });
+  };
+  await setCachedJson(cacheKey, payload, 45);
+  res.json(payload);
 });
 
 router.get('/feed', optionalAuth, async (req: AuthRequest, res) => {
@@ -109,6 +121,10 @@ router.get('/feed', optionalAuth, async (req: AuthRequest, res) => {
   const tab = (req.query.tab as string) || 'latest';
   const limit = Math.min(Number(req.query.limit) || 10, 50);
   const cursor = req.query.cursor as string | undefined;
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `feed:v${cacheVersion}:u${req.userId || 'guest'}:t${tab}:l${limit}:c${cursor || 'first'}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
 
   let query: Record<string, unknown> = {
     isHidden: false,
@@ -135,11 +151,13 @@ router.get('/feed', optionalAuth, async (req: AuthRequest, res) => {
   const hasMore = posts.length > limit;
   if (hasMore) posts.pop();
 
-  res.json({
+  const payload = {
     posts: posts.map((p) => formatPost(p as Record<string, unknown>, req.userId)),
     nextCursor: hasMore ? posts[posts.length - 1]?.createdAt : null,
     hasMore,
-  });
+  };
+  await setCachedJson(cacheKey, payload, 45);
+  res.json(payload);
 });
 
 router.post('/', authenticate, validate(createPostSchema), async (req: AuthRequest, res) => {
@@ -171,6 +189,7 @@ router.post('/', authenticate, validate(createPostSchema), async (req: AuthReque
   }
   await post.populate('author', 'username avatar isVerified');
   await post.populate('taggedUsers', 'username avatar');
+  await invalidateContentCache();
   res.status(201).json({ post: formatPost(post.toObject() as unknown as Record<string, unknown>, req.userId) });
 });
 
@@ -219,6 +238,7 @@ router.post('/:id/share', authenticate, async (req: AuthRequest, res) => {
 
   post.shareCount += 1;
   await post.save();
+  await invalidateContentCache();
 
   if (post.author.toString() !== req.userId && recipientId) {
     await createNotification({
@@ -255,6 +275,7 @@ router.post('/:id/like', authenticate, async (req: AuthRequest, res) => {
     }
   }
   await post.save();
+  await invalidateContentCache();
   res.json({ likeCount: post.likes.length, isLiked: !wasLiked });
 });
 
@@ -268,6 +289,7 @@ router.post('/:id/comment', authenticate, async (req: AuthRequest, res) => {
   const comment = await Comment.create({ post: post._id, author: req.userId, content: content.trim() });
   post.commentCount += 1;
   await post.save();
+  await invalidateContentCache();
   if (post.author.toString() !== req.userId) {
     await createNotification({
       recipientId: post.author.toString(),
@@ -350,6 +372,7 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
   }
   await Comment.deleteMany({ post: post._id });
   await post.deleteOne();
+  await invalidateContentCache();
   res.json({ ok: true });
 });
 
@@ -377,6 +400,7 @@ router.put('/:id', authenticate, validate(editPostSchema), async (req: AuthReque
   }
   if (visibility !== undefined) post.visibility = visibility;
   await post.save();
+  await invalidateContentCache();
   await post.populate('author', 'username avatar isVerified');
   await post.populate('taggedUsers', 'username avatar');
   res.json({ post: formatPost(post.toObject() as unknown as Record<string, unknown>, req.userId) });

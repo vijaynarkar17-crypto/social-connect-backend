@@ -26,6 +26,7 @@ import { startExpiredPostCleanup } from './services/expirePosts.js';
 import { seedDemoClips } from './services/seedDemoClips.js';
 import { seedAdminUser } from './services/seedAdmin.js';
 import { clearBrokenLocalProfileImages, deleteBrokenLocalMediaPosts } from './services/clearBrokenUploads.js';
+import { connectRedis } from './services/redis.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -91,6 +92,8 @@ io.on('connection', (socket) => {
 
 connectDB()
   .then(async () => {
+    // Redis is an optional cache and must never delay API startup.
+    void connectRedis();
     if (process.env.CLEANUP_DEMO_ACCOUNTS === 'true') {
       await removeDemoAccounts();
     }

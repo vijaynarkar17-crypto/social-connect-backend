@@ -7,6 +7,7 @@ import { Comment } from '../models/Comment.js';
 import { requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { resolvePublicUrl } from '../utils/publicUrl.js';
+import { invalidateContentCache } from '../services/redis.js';
 
 const router = Router();
 
@@ -194,11 +195,13 @@ router.post('/posts/:id/action', validate(postActionSchema), async (req, res) =>
   if (action === 'delete') {
     await Comment.deleteMany({ post: post._id });
     await post.deleteOne();
+    await invalidateContentCache();
     return res.json({ deleted: true, id: String(req.params.id) });
   }
 
   post.isHidden = action === 'hide';
   await post.save();
+  await invalidateContentCache();
   res.json({ post: { id: post._id.toString(), isHidden: post.isHidden } });
 });
 

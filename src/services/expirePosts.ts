@@ -1,6 +1,7 @@
 import { Post } from '../models/Post.js';
 import { Comment } from '../models/Comment.js';
 import { User } from '../models/User.js';
+import { invalidateContentCache } from './redis.js';
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -120,9 +121,13 @@ export async function deleteExpiredPosts(): Promise<number> {
 
 /** Full cleanup pass — call on feed load and on a timer */
 export async function runExpiredPostCleanup(): Promise<number> {
-  await restorePermanentPosts();
-  await backfillEphemeralExpiry();
-  return deleteExpiredPosts();
+  const restored = await restorePermanentPosts();
+  const backfilled = await backfillEphemeralExpiry();
+  const deleted = await deleteExpiredPosts();
+  if (restored + backfilled + deleted > 0) {
+    await invalidateContentCache();
+  }
+  return deleted;
 }
 
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
