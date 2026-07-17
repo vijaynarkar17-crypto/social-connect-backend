@@ -46,7 +46,11 @@ export async function uploadToGridFS(
   return `/api/files/${id.toString()}`;
 }
 
-export async function streamGridFSFile(fileId: string, res: import('express').Response): Promise<boolean> {
+export async function streamGridFSFile(
+  fileId: string,
+  res: import('express').Response,
+  rangeHeader?: string
+): Promise<boolean> {
   if (!mongoose.Types.ObjectId.isValid(fileId)) return false;
 
   const gfs = getBucket();
@@ -55,11 +59,47 @@ export async function streamGridFSFile(fileId: string, res: import('express').Re
   if (!files.length) return false;
 
   const file = files[0];
+  const fileLength = Number(file.length);
   res.setHeader('Content-Type', file.contentType || 'application/octet-stream');
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('Accept-Ranges', 'bytes');
+
+  let start = 0;
+  let end = fileLength - 1;
+
+  if (rangeHeader) {
+    const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+    if (!match) {
+      res.status(416).setHeader('Content-Range', `bytes */${fileLength}`);
+      res.end();
+      return true;
+    }
+
+    const requestedStart = match[1] ? Number(match[1]) : undefined;
+    const requestedEnd = match[2] ? Number(match[2]) : undefined;
+
+    if (requestedStart === undefined && requestedEnd !== undefined) {
+      start = Math.max(0, fileLength - requestedEnd);
+    } else {
+      start = requestedStart ?? 0;
+      end = requestedEnd ?? end;
+    }
+
+    end = Math.min(end, fileLength - 1);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= fileLength) {
+      res.status(416).setHeader('Content-Range', `bytes */${fileLength}`);
+      res.end();
+      return true;
+    }
+
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${fileLength}`);
+  }
+
+  res.setHeader('Content-Length', String(end - start + 1));
 
   await new Promise<void>((resolve, reject) => {
-    const stream = gfs.openDownloadStream(_id);
+    const stream = gfs.openDownloadStream(_id, { start, end: end + 1 });
     stream.on('error', reject);
     stream.on('end', () => resolve());
     stream.pipe(res);
