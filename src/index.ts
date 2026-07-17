@@ -23,10 +23,10 @@ import fileRoutes from './routes/files.js';
 import adminRoutes from './routes/admin.js';
 import { removeDemoAccounts } from './services/notifications.js';
 import { startExpiredPostCleanup } from './services/expirePosts.js';
-import { seedDemoClips } from './services/seedDemoClips.js';
 import { seedAdminUser } from './services/seedAdmin.js';
 import { clearBrokenLocalProfileImages, deleteBrokenLocalMediaPosts } from './services/clearBrokenUploads.js';
 import { connectRedis } from './services/redis.js';
+import { removeDemoClips } from './services/cleanupDemoClips.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -107,7 +107,7 @@ connectDB()
     }
     startExpiredPostCleanup();
     await seedAdminUser();
-    await seedDemoClips();
+    await removeDemoClips();
     server.listen(PORT, () => {
       console.log(`SocialConnect API running on http://localhost:${PORT}`);
     });
