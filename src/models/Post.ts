@@ -46,5 +46,13 @@ const postSchema = new Schema<IPost>(
 postSchema.index({ author: 1, createdAt: -1 });
 postSchema.index({ createdAt: -1 });
 postSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, partialFilterExpression: { expiresAt: { $type: 'date' } } });
+// Feed: filters isHidden + visibility + type, sorts by isPinned/createdAt.
+postSchema.index({ isHidden: 1, visibility: 1, type: 1, isPinned: -1, createdAt: -1 });
+// Clips grid and type-scoped listings (clips/stories) sorted by recency.
+postSchema.index({ type: 1, isHidden: 1, createdAt: -1 });
+// Author profile tabs scoped by type (posts vs clips).
+postSchema.index({ author: 1, type: 1, createdAt: -1 });
+// Tagged-in feed lookups.
+postSchema.index({ taggedUsers: 1, createdAt: -1 });
 
 export const Post = mongoose.model<IPost>('Post', postSchema);

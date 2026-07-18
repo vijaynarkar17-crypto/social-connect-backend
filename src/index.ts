@@ -3,6 +3,8 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
+import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import mongoSanitize from 'express-mongo-sanitize';
 import rateLimit from 'express-rate-limit';
@@ -27,6 +29,7 @@ import { seedAdminUser } from './services/seedAdmin.js';
 import { clearBrokenLocalProfileImages, deleteBrokenLocalMediaPosts } from './services/clearBrokenUploads.js';
 import { connectRedis } from './services/redis.js';
 import { removeDemoClips } from './services/cleanupDemoClips.js';
+import { setIo } from './services/socket.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +56,9 @@ const io = new Server(server, {
   cors: { origin: allowedOrigins, credentials: true },
 });
 
+app.use(compression());
+// Concise request logging: 'dev' locally, 'tiny' in production to limit noise.
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'tiny' : 'dev'));
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
@@ -86,9 +92,26 @@ app.use('/api/admin', apiLimiter, adminRoutes);
 
 app.use(errorHandler);
 
+setIo(io);
 io.on('connection', (socket) => {
   socket.on('join', (room: string) => socket.join(room));
 });
+
+/**
+ * Render's free tier spins the service down after ~15 min idle, causing slow
+ * cold starts. When KEEP_WARM=true, self-ping /health every 14 min to stay warm.
+ */
+function startKeepWarm() {
+  if (process.env.KEEP_WARM !== 'true') return;
+  const base = process.env.RENDER_EXTERNAL_URL || process.env.API_PUBLIC_URL;
+  if (!base) return;
+  const url = `${base.replace(/\/$/, '')}/health`;
+  setInterval(() => {
+    fetch(url).catch(() => {
+      // Best-effort keep-alive; failures are non-fatal.
+    });
+  }, 14 * 60 * 1000);
+}
 
 connectDB()
   .then(async () => {
@@ -111,6 +134,7 @@ connectDB()
     server.listen(PORT, () => {
       console.log(`SocialConnect API running on http://localhost:${PORT}`);
     });
+    startKeepWarm();
   })
   .catch((err) => {
     console.error('Failed to start:', err);

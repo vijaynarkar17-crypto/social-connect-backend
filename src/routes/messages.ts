@@ -8,6 +8,7 @@ import { Follow } from '../models/Follow.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { createNotification } from '../services/notifications.js';
+import { emitToUser } from '../services/socket.js';
 import { ChatRequest } from '../models/ChatRequest.js';
 import { Report } from '../models/Report.js';
 import { assertCanSendMessage, getChatAccess, listFollowUsers } from '../services/chatAccess.js';
@@ -136,7 +137,8 @@ router.get('/chat-requests', authenticate, async (req: AuthRequest, res) => {
   const requests = await ChatRequest.find({ recipient: req.userId, status: 'pending' })
     .populate('sender', 'username avatar isVerified')
     .sort({ createdAt: -1 })
-    .limit(30);
+    .limit(30)
+    .lean();
 
   res.json({
     requests: requests.map((r) => ({
@@ -331,7 +333,8 @@ router.get('/with/:userId', authenticate, async (req: AuthRequest, res) => {
       path: 'sharedPost',
       select: 'type content media author',
       populate: { path: 'author', select: 'username avatar' },
-    });
+    })
+    .lean();
 
   const hasMore = fetched.length > limit;
   const page = hasMore ? fetched.slice(0, limit) : fetched;
@@ -442,6 +445,8 @@ router.post('/', authenticate, validate(sendSchema), async (req: AuthRequest, re
     targetId: message._id.toString(),
     targetType: 'message',
   });
+
+  emitToUser(recipientId, 'message', { from: req.userId });
 
   const shared = sharedPost as unknown as {
     _id: mongoose.Types.ObjectId;

@@ -9,6 +9,21 @@ export function getPublicApiBase(): string {
   return base.replace(/\/$/, '');
 }
 
+/**
+ * Inject Cloudinary delivery transformations so images ship as WebP/AVIF
+ * (`f_auto`) at an auto-selected quality (`q_auto`). Applied on read, so it also
+ * optimizes assets uploaded before this was added. No-op if already transformed.
+ */
+export function optimizeCloudinaryUrl(url: string): string {
+  const marker = '/upload/';
+  const idx = url.indexOf(marker);
+  if (idx === -1) return url;
+  const rest = url.slice(idx + marker.length);
+  // Skip if a transformation with f_auto/q_auto is already present.
+  if (/(^|,)(f_auto|q_auto)(,|\/)/.test(rest)) return url;
+  return `${url.slice(0, idx + marker.length)}f_auto,q_auto/${rest}`;
+}
+
 function extractUploadPath(url: string): string | undefined {
   const apiFile = url.match(/(\/api\/files\/[a-f0-9]{24})/i);
   if (apiFile) return apiFile[1];
@@ -25,7 +40,9 @@ export function resolvePublicUrl(url?: string | null): string | undefined {
   if (isHosted && url.includes('/uploads/')) return undefined;
 
   if (/^https?:\/\//i.test(url)) {
-    if (url.includes('cloudinary.com') || url.includes('res.cloudinary.com')) return url;
+    if (url.includes('cloudinary.com') || url.includes('res.cloudinary.com')) {
+      return optimizeCloudinaryUrl(url);
+    }
     const path = extractUploadPath(url);
     if (path) {
       if (isHosted && path.startsWith('/uploads/')) return undefined;

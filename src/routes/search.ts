@@ -4,6 +4,7 @@ import { Post } from '../models/Post.js';
 import { Follow } from '../models/Follow.js';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
 import { resolvePublicUrl, resolvePublicUrls, withPublicAvatar } from '../utils/publicUrl.js';
+import { CACHE_TTL, getCachedJson, getContentCacheVersion, setCachedJson } from '../services/redis.js';
 
 const router = Router();
 
@@ -12,6 +13,11 @@ router.get('/', optionalAuth, async (req: AuthRequest, res) => {
   if (!q || q.length < 2) {
     return res.json({ users: [], posts: [], hashtags: [] });
   }
+
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `search:v${cacheVersion}:q${q.toLowerCase()}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
 
   const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
   const users = await User.find({
@@ -28,7 +34,7 @@ router.get('/', optionalAuth, async (req: AuthRequest, res) => {
     .limit(10)
     .lean();
 
-  res.json({
+  const payload = {
     users: users.map((u) => ({ ...u, id: u._id, avatar: resolvePublicUrl(u.avatar) })),
     posts: posts.map((p) => ({
       id: p._id,
@@ -38,10 +44,17 @@ router.get('/', optionalAuth, async (req: AuthRequest, res) => {
       createdAt: p.createdAt,
     })),
     hashtags: [`#${q}`, `#${q}Trending`].slice(0, 5),
-  });
+  };
+  await setCachedJson(cacheKey, payload, CACHE_TTL.search);
+  res.json(payload);
 });
 
 router.get('/recommendations', authenticate, async (req: AuthRequest, res) => {
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `recommend:v${cacheVersion}:u${req.userId}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const following = await Follow.find({ follower: req.userId }).select('following');
   const followingIds = following.map((f) => f.following);
   followingIds.push(req.userId! as unknown as import('mongoose').Types.ObjectId);
@@ -62,7 +75,7 @@ router.get('/recommendations', authenticate, async (req: AuthRequest, res) => {
 
   const trendingTags = ['#TechNews', '#SocialConnect', '#WeekendVibes', '#Creators', '#Clips'];
 
-  res.json({
+  const payload = {
     suggestedUsers: suggestedUsers.map((u) => ({ ...u, id: u._id, avatar: resolvePublicUrl(u.avatar) })),
     trendingPosts: trendingPosts.map((p) => ({
       id: p._id,
@@ -72,7 +85,9 @@ router.get('/recommendations', authenticate, async (req: AuthRequest, res) => {
       likeCount: p.likes?.length || 0,
     })),
     trendingTags,
-  });
+  };
+  await setCachedJson(cacheKey, payload, CACHE_TTL.trending);
+  res.json(payload);
 });
 
 export default router;

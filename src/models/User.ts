@@ -71,4 +71,10 @@ const userSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
+// Google OAuth lookups (sparse: only OAuth users have this field).
+userSchema.index({ googleId: 1 }, { sparse: true });
+// Admin user listing filters by role/ban status.
+userSchema.index({ role: 1 });
+userSchema.index({ isBanned: 1, createdAt: -1 });
+
 export const User = mongoose.model<IUser>('User', userSchema);

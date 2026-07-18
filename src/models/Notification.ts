@@ -41,5 +41,7 @@ const notificationSchema = new Schema<INotification>(
 );
 
 notificationSchema.index({ recipient: 1, createdAt: -1 });
+// Unread-count queries: { recipient, read: false }.
+notificationSchema.index({ recipient: 1, read: 1 });
 
 export const Notification = mongoose.model<INotification>('Notification', notificationSchema);

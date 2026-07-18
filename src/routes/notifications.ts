@@ -3,6 +3,13 @@ import { Notification } from '../models/Notification.js';
 import { FollowRequest } from '../models/FollowRequest.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { resolvePublicUrl } from '../utils/publicUrl.js';
+import {
+  CACHE_TTL,
+  getCachedJson,
+  invalidateUserNotifications,
+  notificationsCacheKey,
+  setCachedJson,
+} from '../services/redis.js';
 
 const router = Router();
 
@@ -19,6 +26,10 @@ function mapActor(actor: unknown) {
 }
 
 router.get('/', authenticate, async (req: AuthRequest, res) => {
+  const cacheKey = notificationsCacheKey(req.userId!);
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const notifications = await Notification.find({ recipient: req.userId })
     .populate('actor', 'username avatar isVerified')
     .sort({ createdAt: -1 })
@@ -45,7 +56,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
 
   const pendingSet = new Set(pendingRequests.map((r) => r.follower.toString()));
 
-  res.json({
+  const payload = {
     notifications: notifications.map((n) => {
       const actor = mapActor(n.actor);
       const actorId =
@@ -67,16 +78,20 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       };
     }),
     unreadCount,
-  });
+  };
+  await setCachedJson(cacheKey, payload, CACHE_TTL.notifications);
+  res.json(payload);
 });
 
 router.post('/:id/read', authenticate, async (req: AuthRequest, res) => {
   await Notification.updateOne({ _id: req.params.id, recipient: req.userId }, { read: true });
+  await invalidateUserNotifications(req.userId!);
   res.json({ ok: true });
 });
 
 router.post('/read-all', authenticate, async (req: AuthRequest, res) => {
   await Notification.updateMany({ recipient: req.userId, read: false }, { read: true });
+  await invalidateUserNotifications(req.userId!);
   res.json({ ok: true });
 });
 

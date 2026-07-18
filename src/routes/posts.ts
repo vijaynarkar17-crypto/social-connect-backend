@@ -17,6 +17,7 @@ import { notExpiredFilter, DAILY_VIBE_TTL_MS } from '../services/expirePosts.js'
 import { formatPostPayload } from '../utils/serializeUser.js';
 import { resolvePublicUrls, withPublicAvatar } from '../utils/publicUrl.js';
 import {
+  CACHE_TTL,
   getCachedJson,
   getContentCacheVersion,
   invalidateContentCache,
@@ -41,20 +42,25 @@ function formatPost(post: Record<string, unknown>, userId?: string) {
 }
 
 router.get('/stories', optionalAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) {
+    return res.json({ stories: [] });
+  }
+
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `stories:v${cacheVersion}:u${req.userId}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const baseQuery: Record<string, unknown> = {
     type: 'story',
     isHidden: false,
     expiresAt: { $gt: new Date() },
   };
 
-  if (req.userId) {
-    const follows = await Follow.find({ follower: req.userId }).select('following');
-    const authorIds = follows.map((f) => f.following);
-    authorIds.push(req.userId as unknown as import('mongoose').Types.ObjectId);
-    baseQuery.author = { $in: authorIds };
-  } else {
-    return res.json({ stories: [] });
-  }
+  const follows = await Follow.find({ follower: req.userId }).select('following');
+  const authorIds = follows.map((f) => f.following);
+  authorIds.push(req.userId as unknown as import('mongoose').Types.ObjectId);
+  baseQuery.author = { $in: authorIds };
 
   const stories = await Post.find(baseQuery)
     .populate('author', 'username avatar isVerified')
@@ -75,7 +81,9 @@ router.get('/stories', optionalAuth, async (req: AuthRequest, res) => {
       expiresAt: s.expiresAt,
     });
   }
-  res.json({ stories: Object.values(grouped) });
+  const payload = { stories: Object.values(grouped) };
+  await setCachedJson(cacheKey, payload, CACHE_TTL.stories);
+  res.json(payload);
 });
 
 router.get('/clips', optionalAuth, async (req: AuthRequest, res) => {
@@ -109,7 +117,7 @@ router.get('/clips', optionalAuth, async (req: AuthRequest, res) => {
     nextCursor: hasMore ? clips[clips.length - 1]?.createdAt : null,
     hasMore,
   };
-  await setCachedJson(cacheKey, payload, 45);
+  await setCachedJson(cacheKey, payload, CACHE_TTL.clips);
   res.json(payload);
 });
 
@@ -152,7 +160,7 @@ router.get('/feed', optionalAuth, async (req: AuthRequest, res) => {
     nextCursor: hasMore ? posts[posts.length - 1]?.createdAt : null,
     hasMore,
   };
-  await setCachedJson(cacheKey, payload, 45);
+  await setCachedJson(cacheKey, payload, CACHE_TTL.feed);
   res.json(payload);
 });
 

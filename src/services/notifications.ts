@@ -1,5 +1,7 @@
 import { Notification, NotificationType } from '../models/Notification.js';
 import mongoose from 'mongoose';
+import { invalidateUserNotifications } from './redis.js';
+import { emitToUser } from './socket.js';
 
 export async function createNotification(opts: {
   recipientId: string;
@@ -18,6 +20,8 @@ export async function createNotification(opts: {
     targetId: opts.targetId,
     targetType: opts.targetType,
   });
+  await invalidateUserNotifications(opts.recipientId);
+  emitToUser(opts.recipientId, 'notification', { type: opts.type });
 }
 
 export async function removeDemoAccounts() {

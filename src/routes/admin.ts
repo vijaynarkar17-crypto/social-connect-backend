@@ -7,7 +7,7 @@ import { Comment } from '../models/Comment.js';
 import { requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { resolvePublicUrl } from '../utils/publicUrl.js';
-import { invalidateContentCache } from '../services/redis.js';
+import { invalidateAuthUser, invalidateContentCache } from '../services/redis.js';
 
 const router = Router();
 
@@ -141,6 +141,7 @@ router.post('/users/:id/action', validate(userActionSchema), async (req: AuthReq
     user.isSuspended = false;
   }
   await user.save();
+  await invalidateAuthUser(targetId);
 
   res.json({
     user: {

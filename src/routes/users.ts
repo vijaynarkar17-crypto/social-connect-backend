@@ -16,8 +16,10 @@ import { formatPostPayload, serializeUser } from '../utils/serializeUser.js';
 import { resolvePublicUrl, normalizeStoredAssetUrl } from '../utils/publicUrl.js';
 import { uploadBuffer } from '../services/cloudinary.js';
 import {
+  CACHE_TTL,
   getCachedJson,
   getContentCacheVersion,
+  invalidateAuthUser,
   invalidateContentCache,
   setCachedJson,
 } from '../services/redis.js';
@@ -71,6 +73,7 @@ router.put('/me', authenticate, validate(updateSchema), async (req: AuthRequest,
   if (typeof body.cover === 'string') body.cover = normalizeStoredAssetUrl(body.cover);
   const user = await User.findByIdAndUpdate(req.userId, body, { new: true }).select('-passwordHash -refreshTokens');
   await invalidateContentCache();
+  await invalidateAuthUser(req.userId!);
   res.json({ user: serializeUser(user!) });
 });
 
@@ -85,6 +88,7 @@ router.post('/me/avatar', authenticate, profileUpload.single('file'), async (req
     '-passwordHash -refreshTokens'
   );
   await invalidateContentCache();
+  await invalidateAuthUser(req.userId!);
   res.json({ user: serializeUser(user!), url: resolvePublicUrl(url) || url });
 });
 
@@ -99,6 +103,7 @@ router.post('/me/cover', authenticate, profileUpload.single('file'), async (req:
     '-passwordHash -refreshTokens'
   );
   await invalidateContentCache();
+  await invalidateAuthUser(req.userId!);
   res.json({ user: serializeUser(user!), url: resolvePublicUrl(url) || url });
 });
 
@@ -119,7 +124,8 @@ router.get('/me/share-contacts', authenticate, async (req: AuthRequest, res) => 
   const follows = await Follow.find({ follower: req.userId })
     .populate('following', 'username avatar isVerified')
     .sort({ createdAt: -1 })
-    .limit(50);
+    .limit(50)
+    .lean();
 
   const users: { id: string; username: string; avatar?: string; isVerified?: boolean }[] = [];
   const seen = new Set<string>();
@@ -159,22 +165,22 @@ router.get('/me/share-contacts', authenticate, async (req: AuthRequest, res) => 
 });
 
 router.get('/me/saved', authenticate, async (req: AuthRequest, res) => {
-  const user = await User.findById(req.userId).populate({
-    path: 'savedPosts',
-    match: { isHidden: false },
-    populate: [
-      { path: 'author', select: 'username avatar isVerified' },
-      { path: 'taggedUsers', select: 'username avatar' },
-    ],
-    options: { sort: { createdAt: -1 } },
-  });
+  const user = await User.findById(req.userId)
+    .select('savedPosts')
+    .populate({
+      path: 'savedPosts',
+      match: { isHidden: false },
+      populate: [
+        { path: 'author', select: 'username avatar isVerified' },
+        { path: 'taggedUsers', select: 'username avatar' },
+      ],
+      options: { sort: { createdAt: -1 } },
+    })
+    .lean();
 
-  const posts = (user?.savedPosts || [])
-    .filter((p) => p && typeof p === 'object' && '_id' in (p as object))
-    .map((p) => {
-      const raw = (p as { toObject?: () => Record<string, unknown> }).toObject?.() || (p as unknown as Record<string, unknown>);
-      return formatPost(raw, req.userId);
-    });
+  const posts = ((user?.savedPosts as unknown as Record<string, unknown>[]) || [])
+    .filter((p) => p && typeof p === 'object' && '_id' in p)
+    .map((p) => formatPost(p, req.userId));
 
   res.json({ posts });
 });
@@ -226,7 +232,7 @@ router.get('/:username', optionalAuth, async (req: AuthRequest, res) => {
       chatAccess,
     },
   };
-  await setCachedJson(cacheKey, payload, 45);
+  await setCachedJson(cacheKey, payload, CACHE_TTL.profile);
   res.json(payload);
 });
 
@@ -266,7 +272,7 @@ router.get('/:username/posts', optionalAuth, async (req: AuthRequest, res) => {
     nextCursor: hasMore ? posts[posts.length - 1]?.createdAt : null,
     hasMore,
   };
-  await setCachedJson(cacheKey, payload, 45);
+  await setCachedJson(cacheKey, payload, CACHE_TTL.profile);
   res.json(payload);
 });
 
@@ -300,7 +306,7 @@ router.get('/:username/clips', optionalAuth, async (req: AuthRequest, res) => {
     nextCursor: hasMore ? clips[clips.length - 1]?.createdAt : null,
     hasMore,
   };
-  await setCachedJson(cacheKey, payload, 45);
+  await setCachedJson(cacheKey, payload, CACHE_TTL.profile);
   res.json(payload);
 });
 
@@ -339,32 +345,50 @@ router.get('/:username/tagged', optionalAuth, async (req: AuthRequest, res) => {
     nextCursor: hasMore ? posts[posts.length - 1]?.createdAt : null,
     hasMore,
   };
-  await setCachedJson(cacheKey, payload, 45);
+  await setCachedJson(cacheKey, payload, CACHE_TTL.profile);
   res.json(payload);
 });
 
 router.get('/:username/followers', async (req, res) => {
+  const usernameKey = String(req.params.username || '').toLowerCase();
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `followers:v${cacheVersion}:u${usernameKey}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const user = await User.findOne({ username: req.params.username });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const follows = await Follow.find({ following: user._id })
     .populate('follower', 'username avatar isVerified bio')
     .sort({ createdAt: -1 })
-    .limit(50);
+    .limit(50)
+    .lean();
 
-  res.json({ users: follows.map((f) => f.follower) });
+  const payload = { users: follows.map((f) => f.follower) };
+  await setCachedJson(cacheKey, payload, CACHE_TTL.followers);
+  res.json(payload);
 });
 
 router.get('/:username/following', async (req, res) => {
+  const usernameKey = String(req.params.username || '').toLowerCase();
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `following:v${cacheVersion}:u${usernameKey}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const user = await User.findOne({ username: req.params.username });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const follows = await Follow.find({ follower: user._id })
     .populate('following', 'username avatar isVerified bio')
     .sort({ createdAt: -1 })
-    .limit(50);
+    .limit(50)
+    .lean();
 
-  res.json({ users: follows.map((f) => f.following) });
+  const payload = { users: follows.map((f) => f.following) };
+  await setCachedJson(cacheKey, payload, CACHE_TTL.followers);
+  res.json(payload);
 });
 
 router.post('/follow/:userId', authenticate, async (req: AuthRequest, res) => {

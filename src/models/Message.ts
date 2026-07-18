@@ -23,5 +23,7 @@ const messageSchema = new Schema<IMessage>(
 );
 
 messageSchema.index({ sender: 1, recipient: 1, createdAt: -1 });
+// Reverse-direction lookups (conversations aggregation / inbox scans on recipient).
+messageSchema.index({ recipient: 1, sender: 1, createdAt: -1 });
 
 export const Message = mongoose.model<IMessage>('Message', messageSchema);
