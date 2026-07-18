@@ -28,15 +28,15 @@ Set these in **Render → Environment**:
 
 | Variable | Example |
 |----------|---------|
-| `MONGODB_URI` | `mongodb+srv://user:pass@sc.iudyjxq.mongodb.net/socialconnect?appName=sc` |
-| `FRONTEND_URL` | `https://social-connect-frontend-pi.vercel.app` |
+| `MONGODB_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/socialconnect` |
+| `FRONTEND_URL` | `https://your-app.vercel.app` |
 | `NODE_ENV` | `production` |
 | `JWT_SECRET` | 32+ character random string |
 | `JWT_REFRESH_SECRET` | 32+ character random string |
 
 **MongoDB Atlas:** allow `0.0.0.0/0` in Network Access so Render can connect.
 
-**Vercel frontend** must set `VITE_API_URL` to your Render URL (e.g. `https://social-connect-backend-t9nh.onrender.com`) and redeploy.
+**Vercel frontend** must set `VITE_API_URL` to your Render URL (e.g. `https://your-api.onrender.com`) and redeploy.
 
 Test after deploy:
 - `https://your-api.onrender.com/` → JSON welcome message

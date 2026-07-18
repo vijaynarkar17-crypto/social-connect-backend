@@ -4,7 +4,7 @@ export function getPublicApiBase(): string {
     process.env.API_PUBLIC_URL ||
     process.env.RENDER_EXTERNAL_URL ||
     (process.env.NODE_ENV === 'production'
-      ? 'https://social-connect-backend-t9nh.onrender.com'
+      ? ''
       : `http://localhost:${process.env.PORT || 4000}`);
   return base.replace(/\/$/, '');
 }
