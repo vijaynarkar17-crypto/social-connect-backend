@@ -15,6 +15,12 @@ import { Report } from '../models/Report.js';
 import { formatPostPayload, serializeUser } from '../utils/serializeUser.js';
 import { resolvePublicUrl, normalizeStoredAssetUrl } from '../utils/publicUrl.js';
 import { uploadBuffer } from '../services/cloudinary.js';
+import {
+  getCachedJson,
+  getContentCacheVersion,
+  invalidateContentCache,
+  setCachedJson,
+} from '../services/redis.js';
 
 const router = Router();
 const profileUpload = multer({
@@ -64,6 +70,7 @@ router.put('/me', authenticate, validate(updateSchema), async (req: AuthRequest,
   if (typeof body.avatar === 'string') body.avatar = normalizeStoredAssetUrl(body.avatar);
   if (typeof body.cover === 'string') body.cover = normalizeStoredAssetUrl(body.cover);
   const user = await User.findByIdAndUpdate(req.userId, body, { new: true }).select('-passwordHash -refreshTokens');
+  await invalidateContentCache();
   res.json({ user: serializeUser(user!) });
 });
 
@@ -77,6 +84,7 @@ router.post('/me/avatar', authenticate, profileUpload.single('file'), async (req
   const user = await User.findByIdAndUpdate(req.userId, { avatar: url }, { new: true }).select(
     '-passwordHash -refreshTokens'
   );
+  await invalidateContentCache();
   res.json({ user: serializeUser(user!), url: resolvePublicUrl(url) || url });
 });
 
@@ -90,6 +98,7 @@ router.post('/me/cover', authenticate, profileUpload.single('file'), async (req:
   const user = await User.findByIdAndUpdate(req.userId, { cover: url }, { new: true }).select(
     '-passwordHash -refreshTokens'
   );
+  await invalidateContentCache();
   res.json({ user: serializeUser(user!), url: resolvePublicUrl(url) || url });
 });
 
@@ -171,6 +180,12 @@ router.get('/me/saved', authenticate, async (req: AuthRequest, res) => {
 });
 
 router.get('/:username', optionalAuth, async (req: AuthRequest, res) => {
+  const usernameKey = String(req.params.username || '').toLowerCase();
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `profile:v${cacheVersion}:u${usernameKey}:v${req.userId || 'guest'}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const user = await User.findOne({ username: req.params.username }).select('-passwordHash -refreshTokens -otpCode');
   if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -194,7 +209,7 @@ router.get('/:username', optionalAuth, async (req: AuthRequest, res) => {
     }
   }
 
-  res.json({
+  const payload = {
     user: {
       id: user._id,
       username: user.username,
@@ -210,15 +225,23 @@ router.get('/:username', optionalAuth, async (req: AuthRequest, res) => {
       isOwnProfile: req.userId === user._id.toString(),
       chatAccess,
     },
-  });
+  };
+  await setCachedJson(cacheKey, payload, 45);
+  res.json(payload);
 });
 
 router.get('/:username/posts', optionalAuth, async (req: AuthRequest, res) => {
+  const usernameKey = String(req.params.username || '').toLowerCase();
+  const limit = Math.min(Number(req.query.limit) || 10, 50);
+  const cursor = req.query.cursor as string | undefined;
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `uprofiles:v${cacheVersion}:u${usernameKey}:posts:v${req.userId || 'guest'}:l${limit}:c${cursor || 'first'}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const user = await User.findOne({ username: req.params.username });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const limit = Math.min(Number(req.query.limit) || 10, 50);
-  const cursor = req.query.cursor as string | undefined;
   const query: Record<string, unknown> = {
     author: user._id,
     isHidden: false,
@@ -238,19 +261,27 @@ router.get('/:username/posts', optionalAuth, async (req: AuthRequest, res) => {
   const hasMore = posts.length > limit;
   if (hasMore) posts.pop();
 
-  res.json({
+  const payload = {
     posts: posts.map((p) => formatPost(p as Record<string, unknown>, req.userId)),
     nextCursor: hasMore ? posts[posts.length - 1]?.createdAt : null,
     hasMore,
-  });
+  };
+  await setCachedJson(cacheKey, payload, 45);
+  res.json(payload);
 });
 
 router.get('/:username/clips', optionalAuth, async (req: AuthRequest, res) => {
+  const usernameKey = String(req.params.username || '').toLowerCase();
+  const limit = Math.min(Number(req.query.limit) || 20, 50);
+  const cursor = req.query.cursor as string | undefined;
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `uprofiles:v${cacheVersion}:u${usernameKey}:clips:v${req.userId || 'guest'}:l${limit}:c${cursor || 'first'}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const user = await User.findOne({ username: req.params.username });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const limit = Math.min(Number(req.query.limit) || 20, 50);
-  const cursor = req.query.cursor as string | undefined;
   const query: Record<string, unknown> = { author: user._id, isHidden: false, type: 'clip' };
   if (cursor) query.createdAt = { $lt: new Date(cursor) };
 
@@ -264,19 +295,27 @@ router.get('/:username/clips', optionalAuth, async (req: AuthRequest, res) => {
   const hasMore = clips.length > limit;
   if (hasMore) clips.pop();
 
-  res.json({
+  const payload = {
     clips: clips.map((p) => formatPost(p as Record<string, unknown>, req.userId)),
     nextCursor: hasMore ? clips[clips.length - 1]?.createdAt : null,
     hasMore,
-  });
+  };
+  await setCachedJson(cacheKey, payload, 45);
+  res.json(payload);
 });
 
 router.get('/:username/tagged', optionalAuth, async (req: AuthRequest, res) => {
+  const usernameKey = String(req.params.username || '').toLowerCase();
+  const limit = Math.min(Number(req.query.limit) || 10, 50);
+  const cursor = req.query.cursor as string | undefined;
+  const cacheVersion = await getContentCacheVersion();
+  const cacheKey = `uprofiles:v${cacheVersion}:u${usernameKey}:tagged:v${req.userId || 'guest'}:l${limit}:c${cursor || 'first'}`;
+  const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
   const user = await User.findOne({ username: req.params.username });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const limit = Math.min(Number(req.query.limit) || 10, 50);
-  const cursor = req.query.cursor as string | undefined;
   const query: Record<string, unknown> = {
     taggedUsers: user._id,
     isHidden: false,
@@ -295,11 +334,13 @@ router.get('/:username/tagged', optionalAuth, async (req: AuthRequest, res) => {
   const hasMore = posts.length > limit;
   if (hasMore) posts.pop();
 
-  res.json({
+  const payload = {
     posts: posts.map((p) => formatPost(p as Record<string, unknown>, req.userId)),
     nextCursor: hasMore ? posts[posts.length - 1]?.createdAt : null,
     hasMore,
-  });
+  };
+  await setCachedJson(cacheKey, payload, 45);
+  res.json(payload);
 });
 
 router.get('/:username/followers', async (req, res) => {
@@ -353,6 +394,7 @@ router.post('/follow/:userId', authenticate, async (req: AuthRequest, res) => {
       targetType: 'user',
     });
 
+    await invalidateContentCache();
     return res.json({ ok: true, pending: true });
   }
 
@@ -369,6 +411,7 @@ router.post('/follow/:userId', authenticate, async (req: AuthRequest, res) => {
     targetId: targetUserId,
     targetType: 'user',
   });
+  await invalidateContentCache();
   res.json({ ok: true, following: true });
 });
 
@@ -400,6 +443,7 @@ router.post('/follow-requests/:requesterId/accept', authenticate, async (req: Au
     { read: true, message: 'is now following you' }
   );
 
+  await invalidateContentCache();
   res.json({ ok: true });
 });
 
@@ -445,6 +489,7 @@ router.post('/follow-requests/:requesterId/follow-back', authenticate, async (re
     { read: true, message: 'is now following you' }
   );
 
+  await invalidateContentCache();
   res.json({ ok: true, followedBack: true });
 });
 
@@ -452,6 +497,7 @@ router.delete('/follow/:userId', authenticate, async (req: AuthRequest, res) => 
   const targetUserId = String(req.params.userId);
   await Follow.deleteOne({ follower: req.userId, following: targetUserId });
   await FollowRequest.deleteOne({ follower: req.userId, following: targetUserId, status: 'pending' });
+  await invalidateContentCache();
   res.json({ ok: true });
 });
 
