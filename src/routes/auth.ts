@@ -76,7 +76,16 @@ router.post('/login', validate(loginSchema), async (req, res) => {
 router.post('/admin/login', validate(loginSchema), async (req, res) => {
   try {
     const { email, password, remember } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase().trim() }).maxTimeMS(8000);
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Extra lock: only the configured ADMIN_EMAIL may sign in to the admin portal.
+    // Prevents any other account (even if role were somehow set to admin) from logging in.
+    const allowedAdminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+    if (allowedAdminEmail && normalizedEmail !== allowedAdminEmail) {
+      return res.status(403).json({ error: 'Admin access only' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail }).maxTimeMS(8000);
     if (!user || !user.passwordHash) return res.status(401).json({ error: 'Invalid credentials' });
     if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access only' });
     if (user.isBanned) return res.status(403).json({ error: 'Account banned' });

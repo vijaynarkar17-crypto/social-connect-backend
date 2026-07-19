@@ -36,9 +36,15 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 4000;
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+// Optional: deployed admin panel origin (Vercel). Comma-separated list also supported via ADMIN_URLS.
+const adminUrls = [
+  process.env.ADMIN_URL,
+  ...(process.env.ADMIN_URLS || '').split(',').map((s) => s.trim()),
+].filter(Boolean) as string[];
 
 const allowedOrigins = [
   frontendUrl,
+  ...adminUrls,
   'http://localhost:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5173',
@@ -67,6 +73,12 @@ app.use(mongoSanitize());
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 'Too many attempts. Wait a minute and try again.' } });
+// Stricter limit for admin login to reduce brute-force risk on the public admin URL.
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many admin login attempts. Try again in 15 minutes.' },
+});
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100 });
 
 app.use(passport.initialize());
@@ -79,6 +91,7 @@ app.get('/', (_req, res) => {
 });
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+app.use('/api/auth/admin/login', adminLoginLimiter);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/auth', authLimiter, googleAuthRoutes);
 app.use('/api/users', apiLimiter, userRoutes);
