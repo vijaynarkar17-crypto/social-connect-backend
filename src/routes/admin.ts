@@ -138,30 +138,35 @@ router.post('/users/:id/action', validate(userActionSchema), async (req: AuthReq
   const { action } = req.body as z.infer<typeof userActionSchema>;
 
   if (action === 'delete') {
-    const postIds = (await Post.find({ author: user._id }).select('_id').lean()).map((p) => p._id);
-    if (postIds.length) {
-      await Comment.deleteMany({ post: { $in: postIds } });
-      await Post.deleteMany({ _id: { $in: postIds } });
-    }
-    await Comment.deleteMany({ author: user._id });
-    await Follow.deleteMany({ $or: [{ follower: user._id }, { following: user._id }] });
-    await FollowRequest.deleteMany({ $or: [{ follower: user._id }, { following: user._id }] });
-    await ChatRequest.deleteMany({ $or: [{ sender: user._id }, { recipient: user._id }] });
-    await Message.deleteMany({ $or: [{ sender: user._id }, { recipient: user._id }] });
-    await Notification.deleteMany({ $or: [{ recipient: user._id }, { actor: user._id }] });
-    await Session.deleteMany({ userId: user._id });
-    await Report.deleteMany({
-      $or: [{ reporter: user._id }, { targetType: 'user', targetId: user._id }],
-    });
-    if (postIds.length) {
-      await User.updateMany({ savedPosts: { $in: postIds } }, { $pull: { savedPosts: { $in: postIds } } });
-    }
-    await Post.updateMany({ taggedUsers: user._id }, { $pull: { taggedUsers: user._id } });
+    try {
+      const postIds = (await Post.find({ author: user._id }).select('_id').lean()).map((p) => p._id);
+      if (postIds.length) {
+        await Comment.deleteMany({ post: { $in: postIds } });
+        await Post.deleteMany({ _id: { $in: postIds } });
+      }
+      await Comment.deleteMany({ author: user._id });
+      await Follow.deleteMany({ $or: [{ follower: user._id }, { following: user._id }] });
+      await FollowRequest.deleteMany({ $or: [{ follower: user._id }, { following: user._id }] });
+      await ChatRequest.deleteMany({ $or: [{ sender: user._id }, { recipient: user._id }] });
+      await Message.deleteMany({ $or: [{ sender: user._id }, { recipient: user._id }] });
+      await Notification.deleteMany({ $or: [{ recipient: user._id }, { actor: user._id }] });
+      await Session.deleteMany({ userId: user._id });
+      await Report.deleteMany({
+        $or: [{ reporter: user._id }, { targetType: 'user', targetId: user._id }],
+      });
+      if (postIds.length) {
+        await User.updateMany({ savedPosts: { $in: postIds } }, { $pull: { savedPosts: { $in: postIds } } });
+      }
+      await Post.updateMany({ taggedUsers: user._id }, { $pull: { taggedUsers: user._id } });
 
-    await user.deleteOne();
-    await invalidateAuthUser(targetId);
-    await invalidateContentCache();
-    return res.json({ deleted: true, id: targetId });
+      await user.deleteOne();
+      await invalidateAuthUser(targetId);
+      await invalidateContentCache();
+      return res.json({ deleted: true, id: targetId });
+    } catch (err) {
+      console.error('Admin delete user failed:', err);
+      return res.status(500).json({ error: 'Failed to delete account' });
+    }
   }
 
   if (action === 'ban') {
