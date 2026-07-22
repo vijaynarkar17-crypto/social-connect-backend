@@ -2,7 +2,9 @@
 
 Express + MongoDB + Socket.IO API for Social Connect.
 
-**GitHub:** [social-connect-backend](https://github.com/vijaynarkar17-crypto/social-connect-backend)
+**Owner:** [vijaynarkar17-crypto](https://github.com/vijaynarkar17-crypto)  
+**GitHub:** [social-connect-backend](https://github.com/vijaynarkar17-crypto/social-connect-backend)  
+**License:** All Rights Reserved — see [LICENSE](./LICENSE). Viewing for evaluation is allowed; copying or claiming ownership is not.
 
 ## Requirements
 
