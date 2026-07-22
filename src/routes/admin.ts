@@ -4,6 +4,12 @@ import { User } from '../models/User.js';
 import { Post } from '../models/Post.js';
 import { Report } from '../models/Report.js';
 import { Comment } from '../models/Comment.js';
+import { Follow } from '../models/Follow.js';
+import { FollowRequest } from '../models/FollowRequest.js';
+import { ChatRequest } from '../models/ChatRequest.js';
+import { Message } from '../models/Message.js';
+import { Notification } from '../models/Notification.js';
+import { Session } from '../models/Session.js';
 import { requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { resolvePublicUrl } from '../utils/publicUrl.js';
@@ -114,7 +120,7 @@ router.get('/users', async (req, res) => {
 });
 
 const userActionSchema = z.object({
-  action: z.enum(['ban', 'unban', 'suspend', 'unsuspend']),
+  action: z.enum(['ban', 'unban', 'suspend', 'unsuspend', 'delete']),
 });
 
 router.post('/users/:id/action', validate(userActionSchema), async (req: AuthRequest, res) => {
@@ -130,6 +136,34 @@ router.post('/users/:id/action', validate(userActionSchema), async (req: AuthReq
   }
 
   const { action } = req.body as z.infer<typeof userActionSchema>;
+
+  if (action === 'delete') {
+    const postIds = (await Post.find({ author: user._id }).select('_id').lean()).map((p) => p._id);
+    if (postIds.length) {
+      await Comment.deleteMany({ post: { $in: postIds } });
+      await Post.deleteMany({ _id: { $in: postIds } });
+    }
+    await Comment.deleteMany({ author: user._id });
+    await Follow.deleteMany({ $or: [{ follower: user._id }, { following: user._id }] });
+    await FollowRequest.deleteMany({ $or: [{ follower: user._id }, { following: user._id }] });
+    await ChatRequest.deleteMany({ $or: [{ sender: user._id }, { recipient: user._id }] });
+    await Message.deleteMany({ $or: [{ sender: user._id }, { recipient: user._id }] });
+    await Notification.deleteMany({ $or: [{ recipient: user._id }, { actor: user._id }] });
+    await Session.deleteMany({ userId: user._id });
+    await Report.deleteMany({
+      $or: [{ reporter: user._id }, { targetType: 'user', targetId: user._id }],
+    });
+    if (postIds.length) {
+      await User.updateMany({ savedPosts: { $in: postIds } }, { $pull: { savedPosts: { $in: postIds } } });
+    }
+    await Post.updateMany({ taggedUsers: user._id }, { $pull: { taggedUsers: user._id } });
+
+    await user.deleteOne();
+    await invalidateAuthUser(targetId);
+    await invalidateContentCache();
+    return res.json({ deleted: true, id: targetId });
+  }
+
   if (action === 'ban') {
     user.isBanned = true;
     user.isSuspended = false;
