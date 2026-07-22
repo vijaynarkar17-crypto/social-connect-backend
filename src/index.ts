@@ -79,7 +79,25 @@ const adminLoginLimiter = rateLimit({
   max: 10,
   message: { error: 'Too many admin login attempts. Try again in 15 minutes.' },
 });
-const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100 });
+
+/** Per-route limiters (shared instance was exhausting all APIs when messages/notifications polled). */
+function makeApiLimiter(max: number) {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Wait a minute and try again.' },
+  });
+}
+
+const usersLimiter = makeApiLimiter(200);
+const postsLimiter = makeApiLimiter(200);
+const messagesLimiter = makeApiLimiter(180);
+const notificationsLimiter = makeApiLimiter(120);
+const searchLimiter = makeApiLimiter(100);
+const gifsLimiter = makeApiLimiter(60);
+const adminLimiter = makeApiLimiter(100);
 
 app.use(passport.initialize());
 app.get('/', (_req, res) => {
@@ -94,14 +112,14 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth/admin/login', adminLoginLimiter);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/auth', authLimiter, googleAuthRoutes);
-app.use('/api/users', apiLimiter, userRoutes);
-app.use('/api/posts', apiLimiter, postRoutes);
-app.use('/api/notifications', apiLimiter, notificationRoutes);
-app.use('/api/search', apiLimiter, searchRoutes);
-app.use('/api/gifs', apiLimiter, gifRoutes);
-app.use('/api/messages', apiLimiter, messageRoutes);
+app.use('/api/users', usersLimiter, userRoutes);
+app.use('/api/posts', postsLimiter, postRoutes);
+app.use('/api/notifications', notificationsLimiter, notificationRoutes);
+app.use('/api/search', searchLimiter, searchRoutes);
+app.use('/api/gifs', gifsLimiter, gifRoutes);
+app.use('/api/messages', messagesLimiter, messageRoutes);
 app.use('/api/files', fileRoutes);
-app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/api/admin', adminLimiter, adminRoutes);
 
 app.use(errorHandler);
 
